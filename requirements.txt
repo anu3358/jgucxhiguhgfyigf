@@ -4,3 +4,4 @@ numpy
 scikit-learn
 pydeck
 plotly
+google-generativeai
