@@ -1,4 +1,4 @@
-# app.py - COMPLETE FINAL VERSION WITH GEMINI AI TAB
+# app.py - FIXED MODEL NAME VERSION
 import streamlit as st
 import pandas as pd
 import pydeck as pdk
@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 import os
-import google.generativeai as genai  # NEW: Google Gemini Import
+import google.generativeai as genai
 
 from data_engine import load_thermal_data, get_city_data, get_baseline_stats
 from ml_model import (
@@ -19,7 +19,6 @@ from agent_logic import get_ai_recommendation
 from config import DEFAULT_CITIES
 
 # ============ GEMINI CONFIGURATION ============
-# FIXED: Try st.secrets first (Streamlit Cloud), then environment variable (local)
 try:
     gemini_api_key = st.secrets["GEMINI_API_KEY"]
 except (FileNotFoundError, KeyError):
@@ -28,7 +27,7 @@ except (FileNotFoundError, KeyError):
 if gemini_api_key:
     genai.configure(api_key=gemini_api_key)
 else:
-    # We warn, but don't crash the whole app if key is missing
+    # We warn but don't crash; the AI tab will just show an error if used
     pass
 
 st.set_page_config(
@@ -704,8 +703,8 @@ OUTPUT FORMAT:
 [Watering needs]
                         """
                         
-                        # Call Gemini
-                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        # Use 'gemini-pro' for maximum compatibility
+                        model = genai.GenerativeModel('gemini-pro')
                         response = model.generate_content(prompt)
                         
                         st.markdown(response.text)
