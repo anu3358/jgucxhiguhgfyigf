@@ -1,4 +1,4 @@
-# app.py - FIXED MODEL VERSION 1.0-PRO
+
 import streamlit as st
 import pandas as pd
 import pydeck as pdk
@@ -18,7 +18,7 @@ from ml_model import (
 from agent_logic import get_ai_recommendation
 from config import DEFAULT_CITIES
 
-# ============ GEMINI CONFIGURATION ============
+# ============ GEMINI CONFIGURATION WITH AUTO-DETECTION ============
 try:
     gemini_api_key = st.secrets["GEMINI_API_KEY"]
 except (FileNotFoundError, KeyError):
@@ -27,7 +27,30 @@ except (FileNotFoundError, KeyError):
 if gemini_api_key:
     genai.configure(api_key=gemini_api_key)
 else:
-    pass
+    gemini_api_key = None
+
+# 🔍 AUTO-DETECT AVAILABLE GEMINI MODEL - FIXES 404 ERRORS
+@st.cache_resource
+def get_available_gemini_model():
+    """
+    Automatically detects and returns the first available Gemini model
+    that supports generateContent method.
+    
+    This replaces hardcoded model names and works globally in all regions.
+    Returns None if no API key or no models found.
+    """
+    if not gemini_api_key:
+        return None
+    
+    try:
+        models = genai.list_models()
+        for model in models:
+            if 'generateContent' in model.supported_generation_methods:
+                model_name = model.name.replace('models/', '')
+                return model_name
+        return None
+    except Exception as e:
+        return None
 
 st.set_page_config(
     page_title="AuraCool — Urban Heat AI",
@@ -152,12 +175,12 @@ try:
     df_modified = apply_intervention_to_dataframe(df_city, green_inc_pct, refl_inc_pct)
     summary = get_intervention_summary(df_city, df_modified)
 
-    # ---------- NEW: physical intervention sizing (trees + paint) ----------
+    # Physical intervention sizing (trees + paint)
     base_temp = summary["base_temp"]
     new_temp = summary["new_temp"]
     reduction = max(0.0, base_temp - new_temp)
 
-    # use area_km2 from baseline_stats if available, otherwise default 50 km²
+    # Use area_km2 from baseline_stats if available, otherwise default 50 km²
     area_km2 = baseline_stats.get("area_km2", 50)
 
     estimated_trees = estimate_trees_required(
@@ -218,7 +241,7 @@ try:
             label="Additional shade trees",
             value=f"{estimated_trees:,}",
             help=(
-                "Heuristic city‑scale estimate based on built‑up area and "
+                "Heuristic city-scale estimate based on built-up area and "
                 "the achieved average cooling. Use as a planning guide, not "
                 "an engineering design specification."
             ),
@@ -231,15 +254,15 @@ try:
 
     with col_paint:
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.subheader("Cool‑roof coating spec")
+        st.subheader("Cool-roof coating spec")
         if layers_needed > 0:
             st.write(f"**Recommended layers:** {layers_needed} coat(s)")
         else:
             st.write("**Recommended layers:** 0 (no coating needed for current scenario)")
         st.write(f"**Suggested colour:** {paint_color}")
         st.caption(
-            "Rule of thumb: each high‑albedo coat contributes ≈0.8 °C average "
-            "roof‑level cooling in very hot climates."
+            "Rule of thumb: each high-albedo coat contributes ≈0.8 °C average "
+            "roof-level cooling in very hot climates."
         )
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -273,7 +296,7 @@ try:
         </div>
         """, unsafe_allow_html=True)
 
-    # ============ VISUALIZATION TABS (ADDED NEW TAB AT END) ============
+    # ============ VISUALIZATION TABS ============
     tab_intro, tab1, tab2, tab3, tab4, tab5 = st.tabs(
         [
             "🌍 Problem & Solution", 
@@ -281,7 +304,7 @@ try:
             "📊 Temperature Distribution", 
             "🎯 Intervention Impact", 
             "🤖 AI Strategy",
-            "🌳 AI Tree Advisor"  # NEW TAB
+            "🌳 AI Tree Advisor"
         ]
     )
 
@@ -625,7 +648,7 @@ try:
                 mime="text/plain",
             )
 
-    # ========== TAB 5: AI TREE ADVISOR (NEW GEMINI TAB) ==========
+    # ========== TAB 5: AI TREE ADVISOR (WITH AUTO-DETECTING GEMINI) ✅ FIXED ==========
     with tab5:
         st.subheader("🌳 AI Tree Advisor (Powered by Gemini)")
         st.write("Get personalized tree recommendations based on **temperature control**, **UV protection**, and **planting seasons**.")
@@ -671,56 +694,135 @@ try:
         
         st.markdown("---")
         
-        # Generate Gemini Recommendation
+        # Generate Gemini Recommendation with Auto-Detection ✅
         if st.button("🤖 Get AI Tree Recommendation", type="primary", use_container_width=True):
             if not gemini_api_key:
                 st.error("❌ Gemini API key not configured. Please set GEMINI_API_KEY in Streamlit Secrets.")
+                st.info("**How to fix:**\n"
+                       "1. Go to Streamlit Cloud → Your App → Settings\n"
+                       "2. Click 'Secrets'\n"
+                       "3. Add: `GEMINI_API_KEY = 'your_key_here'`\n"
+                       "4. Save and refresh the app")
             else:
-                with st.spinner("🔄 Analyzing best trees for your location using Gemini AI..."):
-                    try:
-                        # Gemini Prompt
-                        prompt = f"""
+                # Step 1: Detect available model
+                with st.spinner("🔄 Detecting available Gemini models..."):
+                    detected_model = get_available_gemini_model()
+                
+                # Step 2: Check if model found
+                if not detected_model:
+                    st.error("❌ No available Gemini model found. Check your API key and quota.")
+                    st.info("💡 **Troubleshooting Steps:**\n"
+                           "1. Visit: https://makersuite.google.com/app/apikey\n"
+                           "2. Verify your API key has remaining quota\n"
+                           "3. Go to Google Cloud Console\n"
+                           "4. Enable 'Generative Language API'\n"
+                           "5. Ensure billing is enabled\n"
+                           "6. Try again in a few moments")
+                else:
+                    # Step 3: Show detected model ✅
+                    st.info(f"✅ Using model: `{detected_model}`")
+                    
+                    # Step 4: Generate recommendations
+                    with st.spinner("🌳 Analyzing best trees for your location..."):
+                        try:
+                            # Create Gemini prompt
+                            prompt = f"""
 You are an expert urban arborist and climate scientist.
 Based on the user's inputs, provide top 3 tree recommendations.
 
-DETAILS:
-- Climate: {user_climate}
+USER DETAILS:
+- Climate Zone: {user_climate}
 - Priority: {user_concern}
-- Space: {area_size}
+- Available Space: {area_size}
 
-OUTPUT FORMAT:
+PROVIDE IN THIS EXACT FORMAT:
+
 ## 🌲 Top 3 Recommended Trees
-[List 3 specific trees with Scientific Name, Cooling Capacity (deg C), UV Protection Factor (SPF equiv), and Best Season to Plant]
 
-## ☀️ Trees vs Sunscreen for UV
-[Compare tree shade vs sunscreen effectiveness. Is tree shade better? Why?]
+**1. [Tree Common Name]** (*Scientific Name*)
+   - Cooling Capacity: X°C
+   - UV Protection Factor: SPF ~Y
+   - Best Planting Season: [Season]
+   - Maintenance: [Low/Medium/High]
 
-## 🌱 Planting Advice
-[3 bullet points on how to plant in {user_climate}]
+**2. [Tree Common Name]** (*Scientific Name*)
+   - Cooling Capacity: X°C
+   - UV Protection Factor: SPF ~Y
+   - Best Planting Season: [Season]
+   - Maintenance: [Low/Medium/High]
 
-## 💧 Maintenance
-[Watering needs]
-                        """
-                        
-                        # Use 'gemini-1.0-pro' which is universally available
-                        model = genai.GenerativeModel('gemini-1.0-pro')
-                        response = model.generate_content(prompt)
-                        
-                        st.markdown(response.text)
-                        
-                        st.success("✅ **Quick Tip:** Planting native trees ensures better survival rates and requires less water!")
-                        
-                    except Exception as e:
-                        st.error(f"❌ Gemini API Error: {e}")
-                        st.info("Try checking your API key quota or enable the 'Generative Language API' in Google Cloud Console.")
+**3. [Tree Common Name]** (*Scientific Name*)
+   - Cooling Capacity: X°C
+   - UV Protection Factor: SPF ~Y
+   - Best Planting Season: [Season]
+   - Maintenance: [Low/Medium/High]
+
+## ☀️ Trees vs Sunscreen for UV Protection
+
+[Compare tree shade effectiveness vs sunscreen. Is tree shade better? Why?]
+
+## 🌱 Planting Advice for {user_climate} Climate
+
+- [Bullet point 1: Key consideration]
+- [Bullet point 2: Key consideration]
+- [Bullet point 3: Key consideration]
+
+## 💧 Maintenance & Watering Needs
+
+[Describe watering requirements, frequency, and care for this climate]
+                            """
+                            
+                            # Initialize model with AUTO-DETECTED name ✅
+                            model = genai.GenerativeModel(detected_model)
+                            
+                            # Generate content
+                            response = model.generate_content(prompt)
+                            
+                            # Display recommendations
+                            st.markdown(response.text)
+                            
+                            # Success message
+                            st.success("✅ **Quick Tip:** Planting native trees ensures better survival rates and requires less water!")
+                            
+                        except Exception as e:
+                            # Detailed error handling
+                            st.error(f"❌ Gemini API Error: {str(e)}")
+                            st.info("💡 **Troubleshooting:**\n"
+                                   "1. Check your API key is correct\n"
+                                   "2. Verify you have quota remaining (check makersuite.google.com)\n"
+                                   "3. Ensure 'Generative Language API' is enabled in Google Cloud Console\n"
+                                   "4. Wait a moment and try again")
 
         st.markdown("---")
+        
+        # Research section
         with st.expander("📚 Research: Trees vs Sunscreen"):
             st.markdown("""
             **Did you know?**
-            - 🌳 **Tree Shade:** Blocks 95-98% of UV radiation (SPF ~10-50 depending on density).
-            - 🧴 **Sunscreen:** SPF 50 blocks 98% of UV.
-            - **Verdict:** Dense tree shade offers similar protection to high SPF sunscreen, but without chemicals and with added cooling!
+            
+            🌳 **Tree Shade Effectiveness:**
+            - Blocks 95-98% of UV radiation
+            - Equivalent to SPF 10-50 depending on leaf density
+            - Natural cooling: 2-5°C reduction
+            - No chemical residue
+            
+            🧴 **Sunscreen Effectiveness:**
+            - SPF 50 blocks 98% of UV radiation
+            - Requires reapplication every 2 hours
+            - Chemical ingredients can be harmful
+            - Washes off with sweat and water
+            
+            **Verdict:**
+            Dense tree shade offers **similar UV protection** to high SPF sunscreen,
+            but with **added cooling benefits** and **no chemicals**. The best approach
+            combines both: trees for natural cooling + sunscreen for extra protection.
+            
+            **Best Trees for Sun Protection:**
+            - Neem (India) - Dense foliage, medicinal
+            - Banyan - Massive canopy
+            - Pipal - Sacred, excellent shade
+            - Mango - Fruit + cooling
+            - Eucalyptus - Fast growing
             """)
 
     st.markdown("---")
